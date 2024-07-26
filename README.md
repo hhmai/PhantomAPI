@@ -6,4 +6,13 @@ This API was developed to utilize any Phantom Haptic Device (3DOF, 1.5 HF, etc) 
 ## To use in Unity3D
 * Copy and import the `PhantomAPI.dll` file into your Assets/Plugins or Assets/Dlls folder.
 * In Unity, select the Dll and ensure that 'Load on Startup' is checked off. Press apply.
-* Create a C# script that imports the following methods from "PhantomAPI": 
+* Create a C# script that imports the following methods from "PhantomAPI":   
+`InitializeDevice()`
+`ShutdownDevice()`
+`SetCustomTorque(double baseX, double baseY, double baseZ, double force)`
+
+Lets breakdown the methods and what they do.  
+
+IntializeDevice() will connect to and start the scheduler for the default phantom profile.  
+ShutdownDevice() disconnects from the phantom.  
+SetCustomTorque(double baseX, double baseY, double baseZ, double force) will set the amount of force each motor outputs for the respective axis. Force is registered as 0-6, with 6 being the strongest force and 0 being no force. Force is applied in increments of 500 in source code, besides for Z axis which is set in increments of 250 (based off testing).
