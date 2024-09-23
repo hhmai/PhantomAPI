@@ -25,6 +25,7 @@ extern "C" {
     HDCallbackCode HDCALLBACK jointTorqueCallback(void* data);
     HDSchedulerHandle hGravityWell = HD_INVALID_HANDLE;
     HHD hHD = HD_INVALID_HANDLE;
+	HHD hHD2 = HD_INVALID_HANDLE;
 
     __declspec(dllexport) int InitializeDevice()
     {
@@ -53,6 +54,21 @@ extern "C" {
         return 0;
     }
 
+	__declspec(dllexport) void InitializeSecondDevice()
+	{
+		HDErrorInfo error;
+
+		hHD2 = hdInitDevice("Default Device");
+		if (HD_DEVICE_ERROR(error = hdGetError()))
+		{
+			hduPrintError(stderr, &error, "Failed to initialize second haptic device");
+			return;
+		}
+
+		printf("Second device initialized. Found device model: %s.\n\n", hdGetString(HD_DEVICE_MODEL_TYPE));
+		hdEnable(HD_FORCE_OUTPUT);
+	}
+
     __declspec(dllexport) void ShutdownDevice()
     {
         hdStopScheduler();
@@ -60,10 +76,63 @@ extern "C" {
         hdDisableDevice(hHD);
     }
 
+	__declspec(dllexport) void ShutdownSecondDevice()
+	{
+		hdDisableDevice(hHD2);
+	}
+
+	__declspec(dllexport) void SetCustomTorque(double baseX, double baseY, double baseZ, double force)
+	{
+		customBaseTorque.set(baseX * force * 500, baseY * force * 250, baseZ * force * 500);
+	}
+
     __declspec(dllexport) void SetCustomTorque(double baseX, double baseY, double baseZ, double force)
     {
         customBaseTorque.set(baseX * force * 500, baseY * force * 250, baseZ * force * 500);
     }
+
+	__declspec(dllexport) void SetCustomTorqueRampUp(double baseX, double baseY, double baseZ, double force)
+	{
+		for (int i = 0; i < force * 3; i++)
+		{
+			customBaseTorque.set(baseX * force * 500/3, baseY * force * 500/3, baseZ * force * 500/3)
+			wait(0.1); // Wait for a short duration to create a ramp-up effect
+		}
+	}
+
+	__declspec(dllexport) void SetCustomTorqueRampDown(double baseX, double baseY, double baseZ, double force)
+	{
+		for (int i = force * 3; i > 0; i--)
+		{
+			customBaseTorque.set(baseX * force * 500/3, baseY * force * 500/3, baseZ * force * 500/3)
+			wait(0.1); // Wait for a short duration to create a ramp-down effect
+		}
+		customBaseTorque.set(0, 0, 0); // Reset torque after ramp down
+	}
+
+	__declspec(dllexport) void SetTorqueMode(bool mode)
+	{
+		TorqueMode = mode;
+	}
+
+	__declspec(dllexport) void SetWellPosition(double x, double y, double z)
+	{
+		wellPos.set(x, y, z);
+	}
+
+	__declspec(dllexport) void GetCustomTorque(double* baseX, double* baseY, double* baseZ)
+	{
+		*baseX = customBaseTorque[0];
+		*baseY = customBaseTorque[1];
+		*baseZ = customBaseTorque[2];
+	}
+
+	__declspec(dllexport) void GetWellPosition(double* x, double* y, double* z)
+	{
+		*x = wellPos[0];
+		*y = wellPos[1];
+		*z = wellPos[2];
+	}
 
     HDCallbackCode HDCALLBACK jointTorqueCallback(void* data)
     {
