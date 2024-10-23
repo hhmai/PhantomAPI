@@ -17,11 +17,7 @@
 extern "C" {
 #endif
 
-	static const hduVector3Dd maxGimbalTorque(188.0, 188.0, 48.0); // mNm
-	static const hduVector3Dd nominalBaseTorque(3000, 3000, 3000); // mNm
 	static hduVector3Dd customBaseTorque(0, 0, 0); // mNm
-	static hduVector3Dd customGimbalTorque(0.0, 0.0, 0.0); // mNm
-	static hduVector3Dd wellPos(0, 0, 0);
 	static bool TorqueMode = true;
 	static int timer = 0;
 	static int x = 0;
@@ -32,9 +28,7 @@ extern "C" {
 	static bool rampUp = false;
 
 	HDCallbackCode HDCALLBACK jointTorqueCallback(void* data);
-	HDSchedulerHandle hGravityWell = HD_INVALID_HANDLE;
 	HHD hHD = HD_INVALID_HANDLE;
-	HHD hHD2 = HD_INVALID_HANDLE;
 
 	__declspec(dllexport) int InitializeDevice()
 	{
@@ -48,8 +42,6 @@ extern "C" {
 		}
 
 		printf("Device initialized. Found device model: %s.\n\n", hdGetString(HD_DEVICE_MODEL_TYPE));
-
-		hGravityWell = hdScheduleAsynchronous(jointTorqueCallback, 0, HD_MAX_SCHEDULER_PRIORITY);
 		hdEnable(HD_FORCE_OUTPUT);
 		hdStartScheduler();
 
@@ -63,31 +55,10 @@ extern "C" {
 		return 0;
 	}
 
-	__declspec(dllexport) void InitializeSecondDevice()
-	{
-		HDErrorInfo error;
-
-		hHD2 = hdInitDevice("Default Device");
-		if (HD_DEVICE_ERROR(error = hdGetError()))
-		{
-			hduPrintError(stderr, &error, "Failed to initialize second haptic device");
-			return;
-		}
-
-		printf("Second device initialized. Found device model: %s.\n\n", hdGetString(HD_DEVICE_MODEL_TYPE));
-		hdEnable(HD_FORCE_OUTPUT);
-	}
-
 	__declspec(dllexport) void ShutdownDevice()
 	{
 		hdStopScheduler();
-		hdUnschedule(hGravityWell);
 		hdDisableDevice(hHD);
-	}
-
-	__declspec(dllexport) void ShutdownSecondDevice()
-	{
-		hdDisableDevice(hHD2);
 	}
 
 	__declspec(dllexport) void SetCustomTorque(double baseX, double baseY, double baseZ, double force)
@@ -104,19 +75,6 @@ extern "C" {
 		nForce = force;
 		rampStartTime = std::chrono::high_resolution_clock::now();
 		rampUp = true;
-		/*auto rampStartTime = std::chrono::high_resolution_clock::now();
-		int i = 0;
-		while (i < force * 5)
-		{
-			auto currentTime = std::chrono::high_resolution_clock::now();
-			std::chrono::duration<double, std::milli> elapsedTime = currentTime - rampStartTime;
-			if (elapsedTime.count() >= 50)
-			{
-				customBaseTorque.set(baseX * force * 100 * i, baseY * force * 100 * i, baseZ * force * 100 * i);
-				rampStartTime = std::chrono::high_resolution_clock::now();
-				i += 1;
-			}
-		}*/
 	}
 
 	__declspec(dllexport) void SetCustomTorqueRampDown(double baseX, double baseY, double baseZ, double force)
@@ -143,10 +101,6 @@ extern "C" {
 		TorqueMode = mode;
 	}
 
-	__declspec(dllexport) void SetWellPosition(double x, double y, double z)
-	{
-		wellPos.set(x, y, z);
-	}
 
 	__declspec(dllexport) void GetCustomTorque(double* baseX, double* baseY, double* baseZ)
 	{
@@ -155,24 +109,8 @@ extern "C" {
 		*baseZ = customBaseTorque[2];
 	}
 
-	__declspec(dllexport) void GetWellPosition(double* x, double* y, double* z)
-	{
-		*x = wellPos[0];
-		*y = wellPos[1];
-		*z = wellPos[2];
-	}
-
 	HDCallbackCode HDCALLBACK jointTorqueCallback(void* data)
 	{
-		const HDdouble kStiffness = 0.075; // N/mm
-		const HDdouble kStylusTorqueConstant = 500; // mN.m/radian
-		const HDdouble kJointTorqueConstant = 3000; // mN.m/radian
-
-		const HDdouble kForceInfluence = 50; // mm
-		const HDdouble kTorqueInfluence = 3.14; // radians
-
-		static const hduVector3Dd stylusVirtualFulcrum(0.0, 0.0, 0.0); // In radians
-		static const hduVector3Dd jointVirtualFulcrum(0.0, 0.0, 0.0); // In radians
 
 		HDErrorInfo error;
 		hduVector3Dd position;
@@ -203,24 +141,6 @@ extern "C" {
 		}
 		jointTorque = customBaseTorque;
 
-		// Clamp the base torques to the nominal values
-		for (int i = 0; i < 3; i++)
-		{
-			if (jointTorque[i] > nominalBaseTorque[i])
-				jointTorque[i] = nominalBaseTorque[i];
-			else if (jointTorque[i] < -nominalBaseTorque[i])
-				jointTorque[i] = -nominalBaseTorque[i];
-		}
-
-		// Clamp the gimbal torques to the max continuous values
-		for (int i = 0; i < 3; i++)
-		{
-			if (gimbalTorque[i] > maxGimbalTorque[i])
-				gimbalTorque[i] = maxGimbalTorque[i];
-			else if (gimbalTorque[i] < -maxGimbalTorque[i])
-				gimbalTorque[i] = -maxGimbalTorque[i];
-		}
-
 		if (!TorqueMode)
 			hdSetDoublev(HD_CURRENT_FORCE, force);
 		else
@@ -232,7 +152,7 @@ extern "C" {
 
 		if (HD_DEVICE_ERROR(error = hdGetError()))
 		{
-			hduPrintError(stderr, &error, "Error detected while rendering gravity well\n");
+			hduPrintError(stderr, &error, "Error detected\n");
 			if (hduIsSchedulerError(&error))
 			{
 				return HD_CALLBACK_DONE;
