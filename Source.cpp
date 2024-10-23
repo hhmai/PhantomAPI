@@ -10,49 +10,58 @@
 #include <HD/hd.h>
 #include <HDU/hduError.h>
 #include <HDU/hduVector.h>
+#include <iostream>
+#include <chrono>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-    static const hduVector3Dd maxGimbalTorque(188.0, 188.0, 48.0); // mNm
-    static const hduVector3Dd nominalBaseTorque(3000, 3000, 3000); // mNm
-    static hduVector3Dd customBaseTorque(0, 0, 0); // mNm
-    static hduVector3Dd customGimbalTorque(0.0, 0.0, 0.0); // mNm
-    static hduVector3Dd wellPos(0, 0, 0);
-    static bool TorqueMode = true;
+	static const hduVector3Dd maxGimbalTorque(188.0, 188.0, 48.0); // mNm
+	static const hduVector3Dd nominalBaseTorque(3000, 3000, 3000); // mNm
+	static hduVector3Dd customBaseTorque(0, 0, 0); // mNm
+	static hduVector3Dd customGimbalTorque(0.0, 0.0, 0.0); // mNm
+	static hduVector3Dd wellPos(0, 0, 0);
+	static bool TorqueMode = true;
+	static int timer = 0;
+	static int x = 0;
+	static int y = 0;
+	static int z = 0;
+	static int nForce = 0;
+	static std::chrono::time_point<std::chrono::high_resolution_clock> rampStartTime;
+	static bool rampUp = false;
 
-    HDCallbackCode HDCALLBACK jointTorqueCallback(void* data);
-    HDSchedulerHandle hGravityWell = HD_INVALID_HANDLE;
-    HHD hHD = HD_INVALID_HANDLE;
+	HDCallbackCode HDCALLBACK jointTorqueCallback(void* data);
+	HDSchedulerHandle hGravityWell = HD_INVALID_HANDLE;
+	HHD hHD = HD_INVALID_HANDLE;
 	HHD hHD2 = HD_INVALID_HANDLE;
 
-    __declspec(dllexport) int InitializeDevice()
-    {
-        HDErrorInfo error;
+	__declspec(dllexport) int InitializeDevice()
+	{
+		HDErrorInfo error;
 
-        hHD = hdInitDevice("Default PHANToM");
-        if (HD_DEVICE_ERROR(error = hdGetError()))
-        {
-            hduPrintError(stderr, &error, "Failed to initialize haptic device");
-            return -1;
-        }
+		hHD = hdInitDevice("Default PHANToM");
+		if (HD_DEVICE_ERROR(error = hdGetError()))
+		{
+			hduPrintError(stderr, &error, "Failed to initialize haptic device");
+			return -1;
+		}
 
-        printf("Device initialized. Found device model: %s.\n\n", hdGetString(HD_DEVICE_MODEL_TYPE));
+		printf("Device initialized. Found device model: %s.\n\n", hdGetString(HD_DEVICE_MODEL_TYPE));
 
-        hGravityWell = hdScheduleAsynchronous(jointTorqueCallback, 0, HD_MAX_SCHEDULER_PRIORITY);
-        hdEnable(HD_FORCE_OUTPUT);
-        hdStartScheduler();
+		hGravityWell = hdScheduleAsynchronous(jointTorqueCallback, 0, HD_MAX_SCHEDULER_PRIORITY);
+		hdEnable(HD_FORCE_OUTPUT);
+		hdStartScheduler();
 
-        if (HD_DEVICE_ERROR(error = hdGetError()))
-        {
-            hduPrintError(stderr, &error, "Failed to start scheduler");
-            hdDisableDevice(hHD);
-            return -1;
-        }
+		if (HD_DEVICE_ERROR(error = hdGetError()))
+		{
+			hduPrintError(stderr, &error, "Failed to start scheduler");
+			hdDisableDevice(hHD);
+			return -1;
+		}
 
-        return 0;
-    }
+		return 0;
+	}
 
 	__declspec(dllexport) void InitializeSecondDevice()
 	{
@@ -69,12 +78,12 @@ extern "C" {
 		hdEnable(HD_FORCE_OUTPUT);
 	}
 
-    __declspec(dllexport) void ShutdownDevice()
-    {
-        hdStopScheduler();
-        hdUnschedule(hGravityWell);
-        hdDisableDevice(hHD);
-    }
+	__declspec(dllexport) void ShutdownDevice()
+	{
+		hdStopScheduler();
+		hdUnschedule(hGravityWell);
+		hdDisableDevice(hHD);
+	}
 
 	__declspec(dllexport) void ShutdownSecondDevice()
 	{
@@ -86,28 +95,47 @@ extern "C" {
 		customBaseTorque.set(baseX * force * 500, baseY * force * 250, baseZ * force * 500);
 	}
 
-    __declspec(dllexport) void SetCustomTorque(double baseX, double baseY, double baseZ, double force)
-    {
-        customBaseTorque.set(baseX * force * 500, baseY * force * 250, baseZ * force * 500);
-    }
-
 	__declspec(dllexport) void SetCustomTorqueRampUp(double baseX, double baseY, double baseZ, double force)
 	{
-		for (int i = 0; i < force * 3; i++)
+		timer = 0;
+		x = baseX;
+		y = baseY;
+		z = baseZ;
+		nForce = force;
+		rampStartTime = std::chrono::high_resolution_clock::now();
+		rampUp = true;
+		/*auto rampStartTime = std::chrono::high_resolution_clock::now();
+		int i = 0;
+		while (i < force * 5)
 		{
-			customBaseTorque.set(baseX * force * 500/3, baseY * force * 500/3, baseZ * force * 500/3)
-			wait(0.1); // Wait for a short duration to create a ramp-up effect
-		}
+			auto currentTime = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double, std::milli> elapsedTime = currentTime - rampStartTime;
+			if (elapsedTime.count() >= 50)
+			{
+				customBaseTorque.set(baseX * force * 100 * i, baseY * force * 100 * i, baseZ * force * 100 * i);
+				rampStartTime = std::chrono::high_resolution_clock::now();
+				i += 1;
+			}
+		}*/
 	}
 
 	__declspec(dllexport) void SetCustomTorqueRampDown(double baseX, double baseY, double baseZ, double force)
 	{
-		for (int i = force * 3; i > 0; i--)
+		rampUp = false;
+		auto rampStartTime = std::chrono::high_resolution_clock::now();
+		int i = force * 5;
+		while (i > 0)
 		{
-			customBaseTorque.set(baseX * force * 500/3, baseY * force * 500/3, baseZ * force * 500/3)
-			wait(0.1); // Wait for a short duration to create a ramp-down effect
+			auto currentTime = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double, std::milli> elapsedTime = currentTime - rampStartTime;
+			if (elapsedTime.count() >= 10)
+			{
+				customBaseTorque.set(baseX * force * 100 * i, baseY * force * 100 * i, baseZ * force * 100 * i);
+				rampStartTime = std::chrono::high_resolution_clock::now();
+				i -= 1;
+			}
 		}
-		customBaseTorque.set(0, 0, 0); // Reset torque after ramp down
+		customBaseTorque.set(0, 0, 0);
 	}
 
 	__declspec(dllexport) void SetTorqueMode(bool mode)
@@ -134,77 +162,85 @@ extern "C" {
 		*z = wellPos[2];
 	}
 
-    HDCallbackCode HDCALLBACK jointTorqueCallback(void* data)
-    {
-        const HDdouble kStiffness = 0.075; // N/mm
-        const HDdouble kStylusTorqueConstant = 500; // mN.m/radian
-        const HDdouble kJointTorqueConstant = 3000; // mN.m/radian
+	HDCallbackCode HDCALLBACK jointTorqueCallback(void* data)
+	{
+		const HDdouble kStiffness = 0.075; // N/mm
+		const HDdouble kStylusTorqueConstant = 500; // mN.m/radian
+		const HDdouble kJointTorqueConstant = 3000; // mN.m/radian
 
-        const HDdouble kForceInfluence = 50; // mm
-        const HDdouble kTorqueInfluence = 3.14; // radians
+		const HDdouble kForceInfluence = 50; // mm
+		const HDdouble kTorqueInfluence = 3.14; // radians
 
-        static const hduVector3Dd stylusVirtualFulcrum(0.0, 0.0, 0.0); // In radians
-        static const hduVector3Dd jointVirtualFulcrum(0.0, 0.0, 0.0); // In radians
+		static const hduVector3Dd stylusVirtualFulcrum(0.0, 0.0, 0.0); // In radians
+		static const hduVector3Dd jointVirtualFulcrum(0.0, 0.0, 0.0); // In radians
 
-        HDErrorInfo error;
-        hduVector3Dd position;
-        hduVector3Dd force;
-        hduVector3Dd positionTwell;
-        hduVector3Dd gimbalAngles;
-        hduVector3Dd gimbalTorque;
-        hduVector3Dd gimbalAngleOfTwist;
-        hduVector3Dd jointAngles;
-        hduVector3Dd jointTorque;
-        hduVector3Dd jointAngleOfTwist;
+		HDErrorInfo error;
+		hduVector3Dd position;
+		hduVector3Dd force;
+		hduVector3Dd positionTwell;
+		hduVector3Dd gimbalAngles;
+		hduVector3Dd gimbalTorque;
+		hduVector3Dd gimbalAngleOfTwist;
+		hduVector3Dd jointAngles;
+		hduVector3Dd jointTorque;
+		hduVector3Dd jointAngleOfTwist;
 
-        hdBeginFrame(hHD);
+		hdBeginFrame(hHD);
 
-        hdGetDoublev(HD_CURRENT_POSITION, position);
-        hdGetDoublev(HD_CURRENT_GIMBAL_ANGLES, gimbalAngles);
-        hdGetDoublev(HD_CURRENT_JOINT_ANGLES, jointAngles);
+		hdGetDoublev(HD_CURRENT_POSITION, position);
+		hdGetDoublev(HD_CURRENT_GIMBAL_ANGLES, gimbalAngles);
+		hdGetDoublev(HD_CURRENT_JOINT_ANGLES, jointAngles);
 
-        memset(force, 0, sizeof(hduVector3Dd));
+		memset(force, 0, sizeof(hduVector3Dd));
 
-        jointTorque = customBaseTorque;
+		auto currentTime = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double, std::milli> elapsedTime = currentTime - rampStartTime;
+		if (elapsedTime.count() >= 15 && timer < nForce * 5 && rampUp)
+		{
+			customBaseTorque.set(x * nForce * 100 * timer, y * nForce * 100 * timer, z * nForce * 100 * timer);
+			rampStartTime = std::chrono::high_resolution_clock::now();
+			timer += 1;
+		}
+		jointTorque = customBaseTorque;
 
-        // Clamp the base torques to the nominal values
-        for (int i = 0; i < 3; i++)
-        {
-            if (jointTorque[i] > nominalBaseTorque[i])
-                jointTorque[i] = nominalBaseTorque[i];
-            else if (jointTorque[i] < -nominalBaseTorque[i])
-                jointTorque[i] = -nominalBaseTorque[i];
-        }
+		// Clamp the base torques to the nominal values
+		for (int i = 0; i < 3; i++)
+		{
+			if (jointTorque[i] > nominalBaseTorque[i])
+				jointTorque[i] = nominalBaseTorque[i];
+			else if (jointTorque[i] < -nominalBaseTorque[i])
+				jointTorque[i] = -nominalBaseTorque[i];
+		}
 
-        // Clamp the gimbal torques to the max continuous values
-        for (int i = 0; i < 3; i++)
-        {
-            if (gimbalTorque[i] > maxGimbalTorque[i])
-                gimbalTorque[i] = maxGimbalTorque[i];
-            else if (gimbalTorque[i] < -maxGimbalTorque[i])
-                gimbalTorque[i] = -maxGimbalTorque[i];
-        }
+		// Clamp the gimbal torques to the max continuous values
+		for (int i = 0; i < 3; i++)
+		{
+			if (gimbalTorque[i] > maxGimbalTorque[i])
+				gimbalTorque[i] = maxGimbalTorque[i];
+			else if (gimbalTorque[i] < -maxGimbalTorque[i])
+				gimbalTorque[i] = -maxGimbalTorque[i];
+		}
 
-        if (!TorqueMode)
-            hdSetDoublev(HD_CURRENT_FORCE, force);
-        else
-            hdSetDoublev(HD_CURRENT_JOINT_TORQUE, jointTorque);
+		if (!TorqueMode)
+			hdSetDoublev(HD_CURRENT_FORCE, force);
+		else
+			hdSetDoublev(HD_CURRENT_JOINT_TORQUE, jointTorque);
 
-        hdSetDoublev(HD_CURRENT_GIMBAL_TORQUE, gimbalTorque);
+		hdSetDoublev(HD_CURRENT_GIMBAL_TORQUE, gimbalTorque);
 
-        hdEndFrame(hHD);
+		hdEndFrame(hHD);
 
-        if (HD_DEVICE_ERROR(error = hdGetError()))
-        {
-            hduPrintError(stderr, &error, "Error detected while rendering gravity well\n");
-            if (hduIsSchedulerError(&error))
-            {
-                return HD_CALLBACK_DONE;
-            }
-        }
+		if (HD_DEVICE_ERROR(error = hdGetError()))
+		{
+			hduPrintError(stderr, &error, "Error detected while rendering gravity well\n");
+			if (hduIsSchedulerError(&error))
+			{
+				return HD_CALLBACK_DONE;
+			}
+		}
 
-        return HD_CALLBACK_CONTINUE;
-    }
+		return HD_CALLBACK_CONTINUE;
+	}
 
 #ifdef __cplusplus
 }
